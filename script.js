@@ -4,6 +4,7 @@ const scenes = document.querySelectorAll("[data-scene]");
 const favoriteItems = document.querySelectorAll(".favorite-repertoire li");
 const composerSection = document.querySelector(".repertoire");
 const composerItems = document.querySelectorAll(".repertoire-item");
+const contactSection = document.querySelector(".contact");
 const practiceLines = document.querySelectorAll(".practice-notes p");
 const translatableItems = document.querySelectorAll("[data-en]");
 const languageOptions = document.querySelectorAll(".language-option");
@@ -45,6 +46,8 @@ const pageMeta = {
 const sceneLooks = {
   Opening: { x: 72, y: 30, glow: 0.16, warmth: 0.08 },
   Legato: { x: 28, y: 38, glow: 0.12, warmth: 0.06 },
+  Touch: { x: 36, y: 46, glow: 0.18, warmth: 0.08 },
+  Listening: { x: 58, y: 40, glow: 0.17, warmth: 0.09 },
   Rubato: { x: 68, y: 42, glow: 0.18, warmth: 0.07 },
   Interpretation: { x: 34, y: 44, glow: 0.16, warmth: 0.08 },
   Resonance: { x: 50, y: 48, glow: 0.2, warmth: 0.1 },
@@ -54,6 +57,7 @@ const sceneLooks = {
 };
 
 let ticking = false;
+let languageTransitionTimer;
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -83,26 +87,43 @@ function storeLanguage(language) {
 function applyLanguage(language) {
   const nextLanguage = pageMeta[language] ? language : "en";
   const meta = pageMeta[nextLanguage];
+  const shouldAnimate =
+    document.body.dataset.motion === "ready" &&
+    document.body.dataset.language !== nextLanguage;
 
-  document.documentElement.lang = meta.lang;
-  document.documentElement.dir = meta.dir;
-  document.title = meta.title;
-  document.body.dataset.language = nextLanguage;
-  if (metaDescription) {
-    metaDescription.setAttribute("content", meta.description);
+  const commitLanguage = () => {
+    document.documentElement.lang = meta.lang;
+    document.documentElement.dir = meta.dir;
+    document.title = meta.title;
+    document.body.dataset.language = nextLanguage;
+    if (metaDescription) {
+      metaDescription.setAttribute("content", meta.description);
+    }
+
+    translatableItems.forEach((item) => {
+      item.textContent = item.dataset[nextLanguage] || item.dataset.en;
+    });
+
+    languageOptions.forEach((button) => {
+      const isActive = button.dataset.language === nextLanguage;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-pressed", String(isActive));
+    });
+
+    storeLanguage(nextLanguage);
+    window.requestAnimationFrame(() => {
+      document.body.classList.remove("language-switching");
+    });
+  };
+
+  window.clearTimeout(languageTransitionTimer);
+  if (shouldAnimate) {
+    document.body.classList.add("language-switching");
+    languageTransitionTimer = window.setTimeout(commitLanguage, 140);
+    return;
   }
 
-  translatableItems.forEach((item) => {
-    item.textContent = item.dataset[nextLanguage] || item.dataset.en;
-  });
-
-  languageOptions.forEach((button) => {
-    const isActive = button.dataset.language === nextLanguage;
-    button.classList.toggle("active", isActive);
-    button.setAttribute("aria-pressed", String(isActive));
-  });
-
-  storeLanguage(nextLanguage);
+  commitLanguage();
 }
 
 function updateScrollProgress() {
@@ -110,10 +131,21 @@ function updateScrollProgress() {
   const progress = maxScroll > 0 ? window.scrollY / maxScroll : 0;
   const heroProgress = clamp(window.scrollY / Math.max(window.innerHeight, 1), 0, 1);
   const composerProgress = getComposerProgress();
+  const contactProgress = getContactProgress();
+  const lightDriftX = Math.sin(progress * Math.PI * 1.7) * 46;
+  const lightDriftY = Math.cos(progress * Math.PI * 1.25) * 30;
 
   root.style.setProperty("--scroll", progress.toFixed(4));
   root.style.setProperty("--hero-progress", heroProgress.toFixed(4));
   root.style.setProperty("--hero-shift", `${(-42 * heroProgress).toFixed(2)}px`);
+  root.style.setProperty("--light-drift-x", `${lightDriftX.toFixed(2)}px`);
+  root.style.setProperty("--light-drift-y", `${lightDriftY.toFixed(2)}px`);
+  root.style.setProperty("--light-tilt", `${(108 + progress * 24).toFixed(2)}deg`);
+  root.style.setProperty("--light-sweep", clamp(0.24 + progress * 0.72, 0, 1).toFixed(4));
+  root.style.setProperty("--contact-focus", contactProgress.toFixed(4));
+  if (contactSection) {
+    contactSection.classList.toggle("contact-focus", contactProgress > 0.38);
+  }
   root.style.setProperty("--composer-progress", composerProgress.toFixed(4));
   root.style.setProperty("--composer-line-progress", clamp(composerProgress * 1.28, 0, 1).toFixed(4));
   root.style.setProperty("--composer-glow-y", `${(18 + composerProgress * 58).toFixed(2)}%`);
@@ -149,6 +181,18 @@ function getComposerProgress() {
   }
 
   return clamp((window.innerHeight - rect.top) / travel, 0, 1);
+}
+
+function getContactProgress() {
+  if (!contactSection) {
+    return 0;
+  }
+
+  const rect = contactSection.getBoundingClientRect();
+  const start = window.innerHeight * 0.92;
+  const end = window.innerHeight * 0.22;
+
+  return clamp((start - rect.top) / Math.max(start - end, 1), 0, 1);
 }
 
 function syncActiveComposerItem() {
